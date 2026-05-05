@@ -353,11 +353,10 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
             ),
             const Divider(color: Color(0xFF222235), height: 1),
             // Toolbar
-            Container(
-              color: const Color(0xFF111120),
-              child: QuillSimpleToolbar(
+            QuillSimpleToolbar(
                 controller: _quillController,
                 configurations: QuillSimpleToolbarConfigurations(
+                  color: const Color(0xFF111120),
                   multiRowsDisplay: false,
                   showBoldButton: true,
                   showItalicButton: true,
@@ -402,7 +401,6 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                     ),
                   ),
                 ),
-              ),
             ),
             const Divider(color: Color(0xFF222235), height: 1),
             // Editor body
@@ -417,6 +415,17 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                   expands: false,
                   scrollable: true,
                   embedBuilders: [_LocalImageEmbedBuilder()],
+                  customStyles: DefaultStyles(
+                    color: Colors.white,
+                    placeHolder: DefaultTextBlockStyle(
+                      const TextStyle(
+                          color: Color(0xFF444455), fontSize: 16),
+                      HorizontalSpacing.zero,
+                      VerticalSpacing.zero,
+                      VerticalSpacing.zero,
+                      null,
+                    ),
+                  ),
                 ),
               ),
             ),

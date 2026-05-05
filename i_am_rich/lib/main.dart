@@ -14,7 +14,14 @@ class MyApp extends StatelessWidget {
       title: 'Richie Rich',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFFFD700)),
+        brightness: Brightness.dark,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFFFFD700),
+          brightness: Brightness.dark,
+        ),
+        scaffoldBackgroundColor: const Color(0xFF0D0D1A),
+        canvasColor: const Color(0xFF1A1A2E),
+        cardColor: const Color(0xFF1A1A2E),
         useMaterial3: true,
       ),
       home: const SplashScreen(),
