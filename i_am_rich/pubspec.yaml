@@ -20,6 +20,7 @@ dependencies:
   path: ^1.9.0
   uuid: ^4.4.0
   intl: ^0.20.0
+  fl_chart: ^0.68.0
 
 dependency_overrides:
   intl: ^0.20.0
