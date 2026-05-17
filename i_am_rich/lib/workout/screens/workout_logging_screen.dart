@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 import '../database/workout_database.dart';
 import '../models/exercise.dart';
@@ -27,6 +29,11 @@ class _WorkoutLoggingScreenState extends State<WorkoutLoggingScreen> {
 
   bool _loading = true;
 
+  // Rest timer
+  Timer? _restTimer;
+  int _restRemaining = 0;
+  int _restTotal = 90;
+
   @override
   void initState() {
     super.initState();
@@ -53,6 +60,38 @@ class _WorkoutLoggingScreenState extends State<WorkoutLoggingScreen> {
     if (mounted) setState(() => _loading = false);
   }
 
+  @override
+  void dispose() {
+    _restTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startRest(int seconds) {
+    _restTimer?.cancel();
+    setState(() {
+      _restRemaining = seconds;
+      _restTotal = seconds;
+    });
+    _restTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) { t.cancel(); return; }
+      setState(() {
+        if (_restRemaining > 0) {
+          _restRemaining--;
+          if (_restRemaining == 0) {
+            HapticFeedback.mediumImpact();
+          }
+        } else {
+          t.cancel();
+        }
+      });
+    });
+  }
+
+  void _cancelRest() {
+    _restTimer?.cancel();
+    setState(() => _restRemaining = 0);
+  }
+
   String _fmtW(double w) =>
       w == w.truncate() ? w.toInt().toString() : w.toString();
 
@@ -65,6 +104,7 @@ class _WorkoutLoggingScreenState extends State<WorkoutLoggingScreen> {
     );
     final saved = await _db.createSetLog(newSet);
     setState(() => exLog.sets.add(saved));
+    _startRest(90);
   }
 
   Future<void> _updateSet(ExerciseLog exLog, SetLog updated) async {
@@ -291,7 +331,11 @@ class _WorkoutLoggingScreenState extends State<WorkoutLoggingScreen> {
               ],
             ),
       bottomNavigationBar: SafeArea(
-        child: Padding(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_restRemaining > 0) _buildRestTimer(),
+            Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           child: _log.completed
               ? Container(
@@ -347,6 +391,100 @@ class _WorkoutLoggingScreenState extends State<WorkoutLoggingScreen> {
                   ),
                 ),
         ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRestTimer() {
+    final progress = _restTotal > 0 ? _restRemaining / _restTotal : 0.0;
+    final mins = _restRemaining ~/ 60;
+    final secs = _restRemaining % 60;
+    final timeStr = mins > 0
+        ? '$mins:${secs.toString().padLeft(2, '0')}'
+        : '${secs}s';
+    final done = _restRemaining == 0;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A2E),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: done
+              ? const Color(0xFF2ECC71).withValues(alpha: 0.5)
+              : const Color(0xFF3498DB).withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(
+                done ? Icons.check_circle_outline : Icons.timer_outlined,
+                color: done ? const Color(0xFF2ECC71) : const Color(0xFF3498DB),
+                size: 15,
+              ),
+              const SizedBox(width: 7),
+              Text(
+                done ? 'Rest done — go!' : 'Rest',
+                style: TextStyle(
+                  color: done ? const Color(0xFF2ECC71) : Colors.white54,
+                  fontSize: 12,
+                ),
+              ),
+              const Spacer(),
+              if (!done) ...[
+                Text(
+                  timeStr,
+                  style: const TextStyle(
+                    color: Color(0xFF3498DB),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                GestureDetector(
+                  onTap: () => _startRest(_restRemaining + 30),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF3498DB).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text('+30s',
+                        style: TextStyle(
+                            color: Color(0xFF3498DB),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              GestureDetector(
+                onTap: _cancelRest,
+                child: const Icon(Icons.close, color: Colors.white24, size: 15),
+              ),
+            ],
+          ),
+          if (!done) ...[
+            const SizedBox(height: 5),
+            LinearProgressIndicator(
+              value: progress,
+              backgroundColor: const Color(0xFF0D0D1A),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                progress > 0.5
+                    ? const Color(0xFF3498DB)
+                    : const Color(0xFFF39C12),
+              ),
+              borderRadius: BorderRadius.circular(4),
+              minHeight: 2,
+            ),
+          ],
+        ],
       ),
     );
   }

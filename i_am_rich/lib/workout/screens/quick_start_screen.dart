@@ -12,50 +12,55 @@ const _kPplPresets = <String, List<String>>{
   'Push A': [
     'Bench Press',
     'Incline Dumbbell Press',
+    'Cable Flyes',
     'Dumbbell Shoulder Press',
     'Lateral Raises',
     'Tricep Pushdown',
-    'Skull Crushers',
+    'Overhead Tricep Extension',
   ],
   'Push B': [
-    'Incline Bench Press',
+    'Smith Machine Bench Press',
     'Cable Crossover',
-    'Overhead Press',
+    'Incline Push-ups',
     'Arnold Press',
-    'Overhead Tricep Extension',
-    'Diamond Push-ups',
+    'Rear Delt Flyes',
+    'Tricep Dips',
+    'Skull Crushers',
   ],
   'Pull A': [
-    'Pull-ups',
+    'Assisted Pull-up',
     'Barbell Row',
     'Seated Cable Row',
-    'Barbell Curl',
+    'Lat Pulldown',
     'Hammer Curl',
+    'EZ Bar Curl',
     'Face Pulls',
   ],
   'Pull B': [
-    'Lat Pulldown',
+    'Deadlift',
     'Single Arm DB Row',
     'Chest Supported Row',
-    'EZ Bar Curl',
+    'Lat Pulldown',
     'Incline DB Curl',
-    'Dumbbell Curl',
+    'Concentration Curl',
+    'Face Pulls',
   ],
   'Legs A': [
     'Squat',
     'Leg Press',
-    'Romanian Deadlift',
     'Leg Extension',
-    'Leg Curl',
-    'Standing Calf Raise',
+    'Walking Lunges',
+    'Romanian Deadlift',
+    'Seated Calf Raises',
   ],
   'Legs B': [
-    'Deadlift',
-    'Hip Thrust',
-    'Walking Lunges',
-    'Goblet Squat',
+    'Romanian Deadlift',
     'Leg Curl',
-    'Calf Raises',
+    'Goblet Squat',
+    'Leg Press',
+    'Hip Thrust',
+    'Standing Calf Raise',
+    'Plank',
   ],
 };
 
@@ -110,13 +115,35 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
 
   Future<void> _pickPreset(String name, List<String> exerciseNames) async {
     setState(() => _loading = true);
-    final found = await _db.getExercisesByNames(exerciseNames);
+    List<Exercise> found;
+    final savedIds = await _db.getQuickStartTemplate(name);
+    if (savedIds != null && savedIds.isNotEmpty) {
+      final loaded = await Future.wait(savedIds.map(_db.getExerciseById));
+      found = loaded.whereType<Exercise>().toList();
+      if (found.isEmpty) found = await _db.getExercisesByNames(exerciseNames);
+    } else {
+      found = await _db.getExercisesByNames(exerciseNames);
+    }
     setState(() {
       _workoutName = name;
       _exercises = found;
       _step = 2;
       _loading = false;
     });
+  }
+
+  Future<void> _saveTemplate() async {
+    await _db.saveQuickStartTemplate(
+        _workoutName, _exercises.map((e) => e.id).toList());
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$_workoutName saved as default'),
+          backgroundColor: const Color(0xFF1A1A2E),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   Future<void> _pickMuscleGroup(String label, List<String> groups) async {
@@ -189,7 +216,6 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
             ? IconButton(
                 icon: const Icon(Icons.arrow_back),
                 onPressed: () {
-                  // If started at step 2 (preloaded), back = pop screen
                   if (widget.preloadedExercises != null) {
                     Navigator.pop(context);
                   } else {
@@ -205,6 +231,15 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
           _step == 1 ? 'Quick Start' : _workoutName,
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
+        actions: _step == 2 && _kPplPresets.containsKey(_workoutName)
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.bookmark_outline_rounded),
+                  tooltip: 'Save as default for $_workoutName',
+                  onPressed: _saveTemplate,
+                ),
+              ]
+            : null,
       ),
       body: _loading
           ? const Center(

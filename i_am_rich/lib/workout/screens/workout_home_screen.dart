@@ -11,7 +11,6 @@ import 'progress_screen.dart';
 import 'workout_history_screen.dart';
 import 'quick_start_screen.dart';
 import '../../notes/notes_list_screen.dart';
-import 'package:uuid/uuid.dart';
 
 class WorkoutHomeScreen extends StatefulWidget {
   const WorkoutHomeScreen({super.key});
@@ -778,7 +777,7 @@ class _WorkoutHomeScreenState extends State<WorkoutHomeScreen> {
             child: _StatTile(
               icon: Icons.calendar_today_rounded,
               label: 'This Week',
-              value: '$_weeklyCount / 7',
+              value: '$_weeklyCount / 6',
               color: const Color(0xFF9B59B6),
             ),
           ),

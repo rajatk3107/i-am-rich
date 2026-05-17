@@ -68,6 +68,51 @@ class _WorkoutPlanScreenState extends State<WorkoutPlanScreen> {
     }
   }
 
+  Future<void> _loadPplPlan() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Load PPL Plan',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: const Text(
+          'This replaces your current weekly plan with the 6-day Push / Pull / Legs schedule from your training plan.\n\nMon: Push A  ·  Tue: Pull A  ·  Wed: Legs A\nThu: Push B  ·  Fri: Pull B  ·  Sat: Legs B  ·  Sun: Rest',
+          style: TextStyle(color: Colors.white54, fontSize: 13, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white38)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF9B59B6),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Load Plan', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _saving = true);
+    await _db.loadPplWeeklyPlan();
+    await _load();
+    setState(() => _saving = false);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('PPL plan loaded!'),
+          backgroundColor: Color(0xFF9B59B6),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   void _editDay(int dayOfWeek) {
     final day = _plan[dayOfWeek]!;
     showModalBottomSheet(
@@ -105,7 +150,13 @@ class _WorkoutPlanScreenState extends State<WorkoutPlanScreen> {
                     color: Color(0xFFFFD700), strokeWidth: 2),
               ),
             )
-          else
+          else ...[
+            IconButton(
+              icon: const Icon(Icons.auto_awesome_outlined,
+                  color: Color(0xFF9B59B6), size: 20),
+              tooltip: 'Load PPL Plan',
+              onPressed: _loadPplPlan,
+            ),
             TextButton(
               onPressed: _save,
               child: const Text('Save',
@@ -114,6 +165,7 @@ class _WorkoutPlanScreenState extends State<WorkoutPlanScreen> {
                       fontWeight: FontWeight.bold,
                       fontSize: 15)),
             ),
+          ],
         ],
       ),
       body: _loading

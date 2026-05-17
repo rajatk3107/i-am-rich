@@ -23,7 +23,7 @@ class WorkoutDatabase {
     final path = join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -32,6 +32,16 @@ class WorkoutDatabase {
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) await _addMissingExercises(db);
     if (oldVersion < 3) await _addBodyWeightTable(db);
+    if (oldVersion < 4) await _addQuickStartTemplatesTable(db);
+  }
+
+  Future<void> _addQuickStartTemplatesTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS quick_start_templates (
+        name TEXT PRIMARY KEY,
+        exercise_ids_json TEXT NOT NULL
+      )
+    ''');
   }
 
   Future<void> _addBodyWeightTable(Database db) async {
@@ -161,7 +171,60 @@ class WorkoutDatabase {
       )
     ''');
 
+    await db.execute('''
+      CREATE TABLE quick_start_templates (
+        name TEXT PRIMARY KEY,
+        exercise_ids_json TEXT NOT NULL
+      )
+    ''');
+
     await _seedDefaultExercises(db);
+    await _seedPplWeeklyPlan(db);
+  }
+
+  static const _kPplSchedule = [
+    (1, 'Push A', false, ['Bench Press', 'Incline Dumbbell Press', 'Cable Flyes', 'Dumbbell Shoulder Press', 'Lateral Raises', 'Tricep Pushdown', 'Overhead Tricep Extension']),
+    (2, 'Pull A', false, ['Assisted Pull-up', 'Barbell Row', 'Seated Cable Row', 'Lat Pulldown', 'Hammer Curl', 'EZ Bar Curl', 'Face Pulls']),
+    (3, 'Legs A', false, ['Squat', 'Leg Press', 'Leg Extension', 'Walking Lunges', 'Romanian Deadlift', 'Seated Calf Raises']),
+    (4, 'Push B', false, ['Smith Machine Bench Press', 'Cable Crossover', 'Incline Push-ups', 'Arnold Press', 'Rear Delt Flyes', 'Tricep Dips', 'Skull Crushers']),
+    (5, 'Pull B', false, ['Deadlift', 'Single Arm DB Row', 'Chest Supported Row', 'Lat Pulldown', 'Incline DB Curl', 'Concentration Curl', 'Face Pulls']),
+    (6, 'Legs B', false, ['Romanian Deadlift', 'Leg Curl', 'Goblet Squat', 'Leg Press', 'Hip Thrust', 'Standing Calf Raise', 'Plank']),
+    (7, 'Rest', true, <String>[]),
+  ];
+
+  Future<void> _seedPplWeeklyPlan(Database db) async {
+    const uuid = Uuid();
+    for (final (dow, name, isRest, exNames) in _kPplSchedule) {
+      final dayId = uuid.v4();
+      await db.insert('workout_plan_days', {
+        'id': dayId,
+        'day_of_week': dow,
+        'workout_name': name,
+        'is_rest_day': isRest ? 1 : 0,
+      });
+      for (int i = 0; i < exNames.length; i++) {
+        final rows = await db.query('exercises',
+            where: 'LOWER(name) = LOWER(?)', whereArgs: [exNames[i]], limit: 1);
+        if (rows.isEmpty) continue;
+        await db.insert('plan_day_exercises', {
+          'id': uuid.v4(),
+          'plan_day_id': dayId,
+          'exercise_id': rows.first['id'],
+          'order_index': i,
+        });
+      }
+    }
+  }
+
+  /// Replaces the entire weekly plan with the 6-day PPL schedule from the training plan.
+  /// Safe to call for existing users — always replaces.
+  Future<void> loadPplWeeklyPlan() async {
+    final db = await database;
+    // Clear existing plan
+    for (final (dow, _, _, _) in _kPplSchedule) {
+      await deletePlanDay(dow);
+    }
+    await _seedPplWeeklyPlan(db);
   }
 
   Future<void> _seedDefaultExercises(Database db) async {
@@ -176,6 +239,10 @@ class WorkoutDatabase {
       {'name': 'Cable Flyes', 'group': 'Chest', 'equip': 'Cable'},
       {'name': 'Push-ups', 'group': 'Chest', 'equip': 'Bodyweight'},
       {'name': 'Chest Dips', 'group': 'Chest', 'equip': 'Bodyweight'},
+      {'name': 'Smith Machine Bench Press', 'group': 'Chest', 'equip': 'Machine'},
+      {'name': 'Cable Crossover', 'group': 'Chest', 'equip': 'Cable'},
+      {'name': 'Incline Push-ups', 'group': 'Chest', 'equip': 'Bodyweight'},
+      {'name': 'Diamond Push-ups', 'group': 'Chest', 'equip': 'Bodyweight'},
       // Back
       {'name': 'Deadlift', 'group': 'Back', 'equip': 'Barbell'},
       {'name': 'Barbell Row', 'group': 'Back', 'equip': 'Barbell'},
@@ -186,6 +253,9 @@ class WorkoutDatabase {
       {'name': 'Dumbbell Row', 'group': 'Back', 'equip': 'Dumbbell'},
       {'name': 'T-Bar Row', 'group': 'Back', 'equip': 'Barbell'},
       {'name': 'Hyperextensions', 'group': 'Back', 'equip': 'Machine'},
+      {'name': 'Assisted Pull-up', 'group': 'Back', 'equip': 'Machine'},
+      {'name': 'Chest Supported Row', 'group': 'Back', 'equip': 'Machine'},
+      {'name': 'Single Arm DB Row', 'group': 'Back', 'equip': 'Dumbbell'},
       // Shoulders
       {'name': 'Overhead Press', 'group': 'Shoulders', 'equip': 'Barbell'},
       {'name': 'Dumbbell Shoulder Press', 'group': 'Shoulders', 'equip': 'Dumbbell'},
@@ -206,6 +276,10 @@ class WorkoutDatabase {
       {'name': 'Overhead Tricep Extension', 'group': 'Arms', 'equip': 'Dumbbell'},
       {'name': 'Tricep Dips', 'group': 'Arms', 'equip': 'Bodyweight'},
       {'name': 'Close-Grip Bench Press', 'group': 'Arms', 'equip': 'Barbell'},
+      {'name': 'EZ Bar Curl', 'group': 'Arms', 'equip': 'Barbell'},
+      {'name': 'Concentration Curl', 'group': 'Arms', 'equip': 'Dumbbell'},
+      {'name': 'Incline DB Curl', 'group': 'Arms', 'equip': 'Dumbbell'},
+      {'name': 'Bench Dips', 'group': 'Arms', 'equip': 'Bodyweight'},
       // Legs
       {'name': 'Squat', 'group': 'Legs', 'equip': 'Barbell'},
       {'name': 'Front Squat', 'group': 'Legs', 'equip': 'Barbell'},
@@ -218,6 +292,10 @@ class WorkoutDatabase {
       {'name': 'Hack Squat', 'group': 'Legs', 'equip': 'Machine'},
       {'name': 'Calf Raises', 'group': 'Legs', 'equip': 'Machine'},
       {'name': 'Seated Calf Raises', 'group': 'Legs', 'equip': 'Machine'},
+      {'name': 'Goblet Squat', 'group': 'Legs', 'equip': 'Kettlebell'},
+      {'name': 'Hip Thrust', 'group': 'Legs', 'equip': 'Barbell'},
+      {'name': 'Walking Lunges', 'group': 'Legs', 'equip': 'Dumbbell'},
+      {'name': 'Standing Calf Raise', 'group': 'Legs', 'equip': 'Machine'},
       // Core
       {'name': 'Plank', 'group': 'Core', 'equip': 'Bodyweight'},
       {'name': 'Crunches', 'group': 'Core', 'equip': 'Bodyweight'},
@@ -664,6 +742,26 @@ class WorkoutDatabase {
         orderBy: 'date DESC', limit: 1, columns: ['weight_kg']);
     if (rows.isEmpty) return null;
     return (rows.first['weight_kg'] as num).toDouble();
+  }
+
+  // ─── QUICK START TEMPLATES ──────────────────────────────────────────────────
+
+  Future<void> saveQuickStartTemplate(String name, List<String> exerciseIds) async {
+    final db = await database;
+    await db.insert(
+      'quick_start_templates',
+      {'name': name, 'exercise_ids_json': jsonEncode(exerciseIds)},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<String>?> getQuickStartTemplate(String name) async {
+    final db = await database;
+    final rows = await db.query('quick_start_templates',
+        where: 'name = ?', whereArgs: [name]);
+    if (rows.isEmpty) return null;
+    return List<String>.from(
+        jsonDecode(rows.first['exercise_ids_json'] as String) as List);
   }
 
   String _fmt(DateTime d) =>
