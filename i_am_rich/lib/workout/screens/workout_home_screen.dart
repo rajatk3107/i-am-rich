@@ -382,7 +382,6 @@ class _WorkoutHomeScreenState extends State<WorkoutHomeScreen> {
                 onRefresh: _load,
                 child: CustomScrollView(
                   slivers: [
-                    SliverToBoxAdapter(child: _buildHeader()),
                     SliverToBoxAdapter(child: _buildDateNav()),
                     SliverToBoxAdapter(child: const SizedBox(height: 16)),
                     SliverToBoxAdapter(child: _buildWorkoutCard()),
@@ -398,44 +397,13 @@ class _WorkoutHomeScreenState extends State<WorkoutHomeScreen> {
     );
   }
 
-  // ─── Header ───────────────────────────────────────────────────────────────
-
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-      child: Row(
-        children: [
-          Image.asset('assets/app-icon.png', width: 32, height: 32),
-          const SizedBox(width: 10),
-          const Text(
-            'Aawara',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.5,
-            ),
-          ),
-          const Spacer(),
-          IconButton(
-            onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const NotesListScreen())),
-            icon: const Icon(Icons.note_alt_outlined, color: Colors.white38, size: 22),
-          ),
-        ],
-      ),
-    );
-  }
-
   // ─── Date Navigator ───────────────────────────────────────────────────────
 
   Widget _buildDateNav() {
-    final label = _isToday
-        ? 'Today'
-        : DateFormat('EEEE').format(_selectedDate);
+    final label = _isToday ? 'Today' : DateFormat('EEEE').format(_selectedDate);
     final sub = DateFormat('MMM d, yyyy').format(_selectedDate);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       child: Row(
         children: [
           _CircleBtn(icon: Icons.chevron_left, onTap: _prevDay),
@@ -466,6 +434,12 @@ class _WorkoutHomeScreenState extends State<WorkoutHomeScreen> {
             icon: Icons.chevron_right,
             onTap: _isToday ? null : _nextDay,
             disabled: _isToday,
+          ),
+          const SizedBox(width: 4),
+          _CircleBtn(
+            icon: Icons.edit_note_rounded,
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const NotesListScreen())),
           ),
         ],
       ),
