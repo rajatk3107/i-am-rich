@@ -764,6 +764,232 @@ class WorkoutDatabase {
         jsonDecode(rows.first['exercise_ids_json'] as String) as List);
   }
 
+  // ─── EXERCISE TRACKER ANALYTICS ─────────────────────────────────────────────
+
+  /// Returns all exercises that have at least one set logged in a completed
+  /// workout, with PR, last weight, gain, and sparkline values.
+  Future<List<Map<String, dynamic>>> getTrackedExerciseSummaries() async {
+    final db = await database;
+    // One row per exercise: PR, session count, last session date
+    final rows = await db.rawQuery('''
+      SELECT el.exercise_id,
+             MAX(sl.weight) as pr,
+             COUNT(DISTINCT wl.id) as sessions,
+             MAX(wl.date) as last_date
+      FROM exercise_logs el
+      INNER JOIN set_logs sl ON sl.exercise_log_id = el.id
+      INNER JOIN workout_logs wl ON el.workout_log_id = wl.id
+      WHERE wl.completed = 1 AND sl.weight IS NOT NULL
+      GROUP BY el.exercise_id
+      ORDER BY sessions DESC, pr DESC
+    ''');
+
+    final result = <Map<String, dynamic>>[];
+    for (final row in rows) {
+      final exId = row['exercise_id'] as String;
+      final ex = await getExerciseById(exId);
+      if (ex == null) continue;
+
+      // Last 9 sessions' max weight for sparkline (oldest→newest)
+      final sparks = await db.rawQuery('''
+        SELECT MAX(sl.weight) as w
+        FROM exercise_logs el
+        INNER JOIN set_logs sl ON sl.exercise_log_id = el.id
+        INNER JOIN workout_logs wl ON el.workout_log_id = wl.id
+        WHERE el.exercise_id = ? AND wl.completed = 1 AND sl.weight IS NOT NULL
+        GROUP BY wl.date
+        ORDER BY wl.date DESC
+        LIMIT 9
+      ''', [exId]);
+      final sparkValues = sparks
+          .map((r) => (r['w'] as num).toDouble())
+          .toList()
+          .reversed
+          .toList();
+
+      // First ever weight for delta calculation
+      final firstRow = await db.rawQuery('''
+        SELECT MIN(sl.weight) as fw
+        FROM exercise_logs el
+        INNER JOIN set_logs sl ON sl.exercise_log_id = el.id
+        INNER JOIN workout_logs wl ON el.workout_log_id = wl.id
+        WHERE el.exercise_id = ? AND wl.completed = 1 AND sl.weight IS NOT NULL
+      ''', [exId]);
+      final firstWeight =
+          (firstRow.firstOrNull?['fw'] as num?)?.toDouble() ?? 0.0;
+
+      result.add({
+        'exercise': ex,
+        'pr': (row['pr'] as num).toDouble(),
+        'sessions': row['sessions'] as int,
+        'last_date': row['last_date'] as String,
+        'sparkline': sparkValues,
+        'last_weight': sparkValues.isNotEmpty ? sparkValues.last : 0.0,
+        'gain': (row['pr'] as num).toDouble() - firstWeight,
+      });
+    }
+    return result;
+  }
+
+  /// Time-series data for a specific exercise, grouped by date.
+  /// [metric]: 'orm' (Epley 1RM), 'weight' (top set), 'volume' (session total)
+  Future<List<Map<String, dynamic>>> getExerciseChartData(
+    String exerciseId,
+    String metric,
+    String fromDate,
+  ) async {
+    final db = await database;
+    String selectExpr;
+    switch (metric) {
+      case 'orm':
+        selectExpr =
+            'MAX(sl.weight * (1.0 + COALESCE(sl.reps, 0) / 30.0)) as value';
+        break;
+      case 'volume':
+        selectExpr =
+            'SUM(COALESCE(sl.weight, 0) * COALESCE(sl.reps, 0)) as value';
+        break;
+      default: // weight
+        selectExpr = 'MAX(sl.weight) as value';
+    }
+    final rows = await db.rawQuery('''
+      SELECT wl.date, $selectExpr
+      FROM exercise_logs el
+      INNER JOIN set_logs sl ON sl.exercise_log_id = el.id
+      INNER JOIN workout_logs wl ON el.workout_log_id = wl.id
+      WHERE el.exercise_id = ? AND wl.completed = 1
+            AND sl.weight IS NOT NULL AND wl.date >= ?
+      GROUP BY wl.date
+      ORDER BY wl.date ASC
+    ''', [exerciseId, fromDate]);
+    return rows.map((r) => Map<String, dynamic>.from(r)).toList();
+  }
+
+  /// Last [limit] sessions for an exercise with per-set breakdown.
+  Future<List<Map<String, dynamic>>> getRecentSessionsForExercise(
+    String exerciseId, {
+    int limit = 5,
+  }) async {
+    final db = await database;
+    final sessionRows = await db.rawQuery('''
+      SELECT DISTINCT wl.id, wl.date, MAX(sl.weight) as top_weight
+      FROM exercise_logs el
+      INNER JOIN set_logs sl ON sl.exercise_log_id = el.id
+      INNER JOIN workout_logs wl ON el.workout_log_id = wl.id
+      WHERE el.exercise_id = ? AND wl.completed = 1 AND sl.weight IS NOT NULL
+      GROUP BY wl.id, wl.date
+      ORDER BY wl.date DESC
+      LIMIT ?
+    ''', [exerciseId, limit]);
+
+    final sessions = <Map<String, dynamic>>[];
+    double allTimePR = 0;
+    for (final row in sessionRows) {
+      final w = (row['top_weight'] as num).toDouble();
+      if (w > allTimePR) allTimePR = w;
+    }
+
+    for (final row in sessionRows) {
+      final wlId = row['id'] as String;
+      final setRows = await db.rawQuery('''
+        SELECT sl.weight, sl.reps
+        FROM set_logs sl
+        INNER JOIN exercise_logs el ON sl.exercise_log_id = el.id
+        WHERE el.workout_log_id = ? AND el.exercise_id = ?
+        ORDER BY sl.set_number ASC
+      ''', [wlId, exerciseId]);
+
+      final sets = setRows
+          .where((s) => s['weight'] != null)
+          .map((s) => {
+                'weight': (s['weight'] as num).toDouble(),
+                'reps': s['reps'] as int? ?? 0,
+              })
+          .toList();
+      if (sets.isEmpty) continue;
+
+      final topW = (row['top_weight'] as num).toDouble();
+      final topSet = sets.firstWhere(
+        (s) => (s['weight'] as double) == topW,
+        orElse: () => sets.last,
+      );
+
+      sessions.add({
+        'date': row['date'] as String,
+        'sets': sets,
+        'top_weight': topW,
+        'top_reps': topSet['reps'] as int,
+        'is_pr': topW >= allTimePR,
+      });
+    }
+    // Only mark the most recent session as PR if it actually is
+    if (sessions.isNotEmpty) {
+      final first = sessions.first;
+      sessions.first['is_pr'] =
+          (first['top_weight'] as double) >= allTimePR;
+    }
+    return sessions;
+  }
+
+  /// PR history for an exercise (all-time bests in chronological order,
+  /// returned newest-first).
+  Future<List<Map<String, dynamic>>> getPRHistoryForExercise(
+      String exerciseId) async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT wl.date, MAX(sl.weight) as max_weight
+      FROM exercise_logs el
+      INNER JOIN set_logs sl ON sl.exercise_log_id = el.id
+      INNER JOIN workout_logs wl ON el.workout_log_id = wl.id
+      WHERE el.exercise_id = ? AND wl.completed = 1 AND sl.weight IS NOT NULL
+      GROUP BY wl.date
+      ORDER BY wl.date ASC
+    ''', [exerciseId]);
+
+    double running = 0;
+    final prs = <Map<String, dynamic>>[];
+    for (final row in rows) {
+      final w = (row['max_weight'] as num).toDouble();
+      if (w > running) {
+        prs.add({'weight': w, 'date': row['date'] as String});
+        running = w;
+      }
+    }
+    return prs.reversed.toList(); // newest first
+  }
+
+  /// Aggregate totals for an exercise (sessions, sets, reps, volume).
+  Future<Map<String, dynamic>> getExerciseTotalStats(
+      String exerciseId) async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT
+        COUNT(DISTINCT wl.id) as sessions,
+        COUNT(sl.id) as total_sets,
+        SUM(COALESCE(sl.reps, 0)) as total_reps,
+        SUM(COALESCE(sl.weight, 0) * COALESCE(sl.reps, 0)) as total_volume
+      FROM exercise_logs el
+      INNER JOIN set_logs sl ON sl.exercise_log_id = el.id
+      INNER JOIN workout_logs wl ON el.workout_log_id = wl.id
+      WHERE el.exercise_id = ? AND wl.completed = 1
+    ''', [exerciseId]);
+    if (rows.isEmpty) {
+      return {
+        'sessions': 0,
+        'total_sets': 0,
+        'total_reps': 0,
+        'total_volume': 0.0,
+      };
+    }
+    return {
+      'sessions': rows.first['sessions'] as int? ?? 0,
+      'total_sets': rows.first['total_sets'] as int? ?? 0,
+      'total_reps': rows.first['total_reps'] as int? ?? 0,
+      'total_volume':
+          (rows.first['total_volume'] as num?)?.toDouble() ?? 0.0,
+    };
+  }
+
   // ─── EXPORT ─────────────────────────────────────────────────────────────────
 
   /// Returns workout logs filtered by date range and optionally by a single

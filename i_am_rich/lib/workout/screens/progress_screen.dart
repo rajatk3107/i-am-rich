@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../database/workout_database.dart';
 import '../models/exercise.dart';
+import 'exercise_progress_screen.dart';
 
 enum _Interval { all, twoWeeks, oneMonth, threeMonths, sixMonths, custom }
 
@@ -244,6 +245,8 @@ class _ProgressScreenState extends State<ProgressScreen>
       padding: const EdgeInsets.all(16),
       children: [
         _buildOverviewCards(),
+        const SizedBox(height: 16),
+        _buildExerciseTrackerBanner(),
         const SizedBox(height: 24),
         _buildSectionHeader('Strength Progress'),
         const SizedBox(height: 12),
@@ -264,6 +267,60 @@ class _ProgressScreenState extends State<ProgressScreen>
         ],
         const SizedBox(height: 32),
       ],
+    );
+  }
+
+  Widget _buildExerciseTrackerBanner() {
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ExerciseProgressScreen()),
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF1C1800), Color(0xFF1A1A2E)],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFFFD700).withOpacity(0.35)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFD700).withOpacity(0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.show_chart_rounded,
+                  color: Color(0xFFFFD700), size: 22),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Exercise Tracker',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold)),
+                  SizedBox(height: 2),
+                  Text('PRs, trends & session history per exercise',
+                      style: TextStyle(
+                          color: Color(0xFF888899), fontSize: 12)),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded,
+                color: Color(0xFFFFD700), size: 22),
+          ],
+        ),
+      ),
     );
   }
 
