@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../database/workout_database.dart';
 import '../models/workout_log.dart';
+import 'export_screen.dart';
 import 'workout_logging_screen.dart';
 
 class WorkoutHistoryScreen extends StatefulWidget {
@@ -57,6 +58,16 @@ class _WorkoutHistoryScreenState extends State<WorkoutHistoryScreen> {
             style: TextStyle(
                 color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            tooltip: 'Export Data',
+            icon: const Icon(Icons.ios_share_rounded, color: Color(0xFFFFD700)),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ExportScreen()),
+            ),
+          ),
+        ],
       ),
       body: _loading
           ? const Center(

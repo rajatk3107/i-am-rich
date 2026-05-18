@@ -764,6 +764,97 @@ class WorkoutDatabase {
         jsonDecode(rows.first['exercise_ids_json'] as String) as List);
   }
 
+  // ─── EXPORT ─────────────────────────────────────────────────────────────────
+
+  /// Returns workout logs filtered by date range and optionally by a single
+  /// exercise. When [exerciseId] is set, only workouts that contain that
+  /// exercise are returned and each log contains only that exercise's data.
+  Future<List<WorkoutLog>> getWorkoutLogsForExport({
+    String? fromDate,
+    String? toDate,
+    String? exerciseId,
+  }) async {
+    final db = await database;
+
+    List<Map<String, dynamic>> maps;
+
+    if (exerciseId != null) {
+      final whereParts = ['el.exercise_id = ?'];
+      final whereArgs = <dynamic>[exerciseId];
+      if (fromDate != null) {
+        whereParts.add('wl.date >= ?');
+        whereArgs.add(fromDate);
+      }
+      if (toDate != null) {
+        whereParts.add('wl.date <= ?');
+        whereArgs.add(toDate);
+      }
+      maps = await db.rawQuery('''
+        SELECT DISTINCT wl.* FROM workout_logs wl
+        INNER JOIN exercise_logs el ON el.workout_log_id = wl.id
+        WHERE ${whereParts.join(' AND ')}
+        ORDER BY wl.date DESC
+      ''', whereArgs);
+    } else {
+      final whereParts = <String>[];
+      final whereArgs = <dynamic>[];
+      if (fromDate != null) {
+        whereParts.add('date >= ?');
+        whereArgs.add(fromDate);
+      }
+      if (toDate != null) {
+        whereParts.add('date <= ?');
+        whereArgs.add(toDate);
+      }
+      final whereStr =
+          whereParts.isEmpty ? '' : 'WHERE ${whereParts.join(' AND ')}';
+      maps = await db.rawQuery(
+          'SELECT * FROM workout_logs $whereStr ORDER BY date DESC',
+          whereArgs);
+    }
+
+    final logs = <WorkoutLog>[];
+    for (final map in maps) {
+      final log = WorkoutLog.fromMap(map);
+      log.exercises
+          .addAll(await _getExerciseLogsFiltered(db, log.id, exerciseId: exerciseId));
+      logs.add(log);
+    }
+    return logs;
+  }
+
+  Future<List<ExerciseLog>> _getExerciseLogsFiltered(
+    Database db,
+    String workoutLogId, {
+    String? exerciseId,
+  }) async {
+    final whereParts = ['workout_log_id = ?'];
+    final whereArgs = <dynamic>[workoutLogId];
+    if (exerciseId != null) {
+      whereParts.add('exercise_id = ?');
+      whereArgs.add(exerciseId);
+    }
+    final maps = await db.query(
+      'exercise_logs',
+      where: whereParts.join(' AND '),
+      whereArgs: whereArgs,
+      orderBy: 'order_index ASC',
+    );
+    final exLogs = <ExerciseLog>[];
+    for (final map in maps) {
+      final exLog = ExerciseLog.fromMap(map);
+      final setMaps = await db.query(
+        'set_logs',
+        where: 'exercise_log_id = ?',
+        whereArgs: [exLog.id],
+        orderBy: 'set_number ASC',
+      );
+      exLog.sets.addAll(setMaps.map(SetLog.fromMap));
+      exLogs.add(exLog);
+    }
+    return exLogs;
+  }
+
   String _fmt(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
